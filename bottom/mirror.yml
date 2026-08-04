@@ -1,0 +1,181 @@
+# ⚠ `extends:` is a SHALLOW merge of TOP-LEVEL KEYS. Setting a key here
+# REPLACES the base's block outright — there is no per-key merge. `platforms:`
+# is deliberately NOT restated below: it carries the container legs that make
+# this spec's libc claims honest, and restating it to tweak one runner would
+# drop them all without reddening anything. This repo is single-package, so the
+# measured matrix lives in the base and nothing here touches it.
+extends: ../mirror-base.yml
+
+name: bottom
+
+# Logical index package `bottom/bottom` at the physical path
+# `ghcr.io/ocx-contrib/bottom/bottom` — slash segments, never hyphen-flattened.
+# Two segments always; `ClementTsang` is a personal handle, not a vendor, so
+# the tool names itself. The package segment is the name the PROJECT publishes
+# under (`bottom`), not the binary you type (`btm`). The first segment must be
+# this repo's own GitHub owner: GITHUB_TOKEN only authorises packages owned by
+# the repo the workflow runs in.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/bottom/bottom
+
+source:
+  type: github_release
+  owner: ClementTsang
+  repo: bottom
+  # bottom tags bare semver — no "v" prefix (e.g. "0.14.7"). This also excludes
+  # the `nightly-<hash>-<timestamp>` tags, which `skip_prereleases` in the base
+  # already drops (the API flags them prerelease: true).
+  tag_pattern: "^(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST. Measured on BOTH
+# ends of the range (0.14.5 and 0.14.7), per arch. Both Linux keys came out
+# BARE because both musl artifacts are fully static — the measurement, not the
+# `-musl` filename, decided that:
+#
+#   $ file bottom_x86_64-unknown-linux-musl/btm
+#   ELF 64-bit LSB pie executable, x86-64, static-pie linked, stripped
+#   $ readelf -l … | grep -c INTERP  → 0     (also 0 on 0.14.5)
+#   $ readelf -d … | grep -c NEEDED  → 0     (also 0 on 0.14.5)
+#
+#   $ file bottom_aarch64-unknown-linux-musl/btm
+#   ELF 64-bit LSB executable, ARM aarch64, statically linked, stripped
+#   $ readelf -l … | grep -c INTERP  → 0     (also 0 on 0.14.5)
+#   $ readelf -d … | grep -c NEEDED  → 0     (also 0 on 0.14.5)
+#
+#     ⇒ musl is linked IN, not linked AGAINST → each requires nothing → BARE
+#       `linux/amd64` and `linux/arm64`. `+libc.musl` would be a false
+#       requirement that hid the package from every glibc host it in fact runs
+#       on. The alpine container leg on each key is what turns the universality
+#       claim into evidence.
+#
+# Upstream ALSO ships gnu builds for both arches, and they are genuinely
+# dynamic:
+#
+#   $ file bottom_x86_64-unknown-linux-gnu/btm
+#   … dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2 …
+#   $ readelf -d … | grep NEEDED  → libgcc_s.so.1  libm.so.6  libc.so.6
+#   $ readelf -V … | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1 → GLIBC_2.34
+#   (aarch64-unknown-linux-gnu measures identically, also GLIBC_2.34.)
+#
+# They are DELIBERATELY NOT CARRIED. Publishing them alongside as
+# `+libc.glibc` keys is safe and would hand glibc hosts their native build, but
+# the skill's rule is that a second key is the fallback, not the goal: it earns
+# its place only where the gnu build reaches capability the static one lacks.
+# btm reads /proc and sysfs and resolves no hostnames, so the usual
+# differentiator (musl's NSS-blind resolver) does not apply here. The one real
+# gap is NSS-backed process OWNER lookup on hosts using LDAP/SSSD — marginal
+# for a monitor that also shows the numeric uid — and it does not justify
+# doubling the container matrix. Not carrying them also sidesteps the
+# `-2-17` ambiguity below entirely.
+#
+# ─── Scope (verified against 0.14.5, the floor, 0.14.6 and 0.14.7) ──────────
+#
+# Each pattern below matches EXACTLY ONE asset on EVERY one of the three
+# in-range releases — checked with anchored regexes against the full per-release
+# asset list, 18/18. A pattern matching ZERO is silently skipped, not an error:
+# it would yield a green run with a missing platform.
+#
+# ⚠ ASSET NAMES CARRY NO VERSION STRING. `bottom_x86_64-unknown-linux-musl.tar.gz`
+# is byte-identical in name on every tag, so nothing in a filename can confirm
+# which release it came from. Two consequences, both checked rather than assumed:
+#   • Resolution is tag-scoped by construction — the pipeline reads the assets
+#     of a specific release and takes their own `browser_download_url`
+#     (`…/releases/download/0.14.7/bottom_…`), never a `latest` alias.
+#   • Tag↔content agreement was verified by RUNNING the artifacts:
+#     0.14.7's binary self-reports `bottom 0.14.7`, 0.14.5's `bottom 0.14.5`.
+#     (An upstream shipping the previous version's bytes under a new tag would
+#     otherwise green everywhere — it happened on this fleet.)
+#
+# ⚠ AMBIGUITY HAZARD, avoided by the terminating `$`: upstream ships
+# `bottom_x86_64-unknown-linux-gnu-2-17.tar.gz` (an older glibc-2.17 baseline
+# build) beside `bottom_x86_64-unknown-linux-gnu.tar.gz`. An unanchored gnu
+# pattern matches BOTH → hard ambiguous error. Moot here since no gnu asset is
+# declared, but the `^…$` anchoring is what keeps every pattern below to one
+# match.
+#
+# Upstream also publishes, and this mirror deliberately does not carry:
+#   i686-{unknown-linux-gnu,unknown-linux-musl,pc-windows-msvc}  — no OCX 386 key
+#   armv7-unknown-linux-{gnueabihf,musleabihf}                   — no OCX arm key
+#   loongarch64/powerpc64le/riscv64gc-unknown-linux-gnu          — no OCX key
+#   x86_64-unknown-{freebsd,netbsd}, aarch64-linux-android       — no OCX os
+#   x86_64-pc-windows-gnu                                        — msvc is carried
+#   *.deb, *.rpm, *_installer.msi, choco.zip, bottom.desktop,
+#   completion.tar.gz, manpage.tar.gz                            — packaging noise
+#
+# The anchored ^…$ regexes are what keep those out.
+assets:
+  linux/amd64:
+    - "^bottom_x86_64-unknown-linux-musl\\.tar\\.gz$"
+  linux/arm64:
+    - "^bottom_aarch64-unknown-linux-musl\\.tar\\.gz$"
+  # PASS 2 — darwin:
+  # darwin/amd64:
+  #   - "^bottom_x86_64-apple-darwin\\.tar\\.gz$"
+  # darwin/arm64:
+  #   - "^bottom_aarch64-apple-darwin\\.tar\\.gz$"
+  # PASS 3 — windows:
+  # windows/amd64:
+  #   - "^bottom_x86_64-pc-windows-msvc\\.zip$"
+  # windows/arm64:
+  #   - "^bottom_aarch64-pc-windows-msvc\\.zip$"
+
+# Every archive — tarball and zip alike — is FLAT: `btm` (`btm.exe` on Windows,
+# mode 0755 in the tarballs) sits at the archive ROOT beside a `completion/`
+# directory, with NO wrapper directory at all. So `strip_components: 0` is what
+# keeps the executable at the content root; stripping 1 would delete `btm`
+# outright and hoist `completion/*` in its place. A single metadata.json
+# (PATH = ${installPath}) therefore serves every platform.
+asset_type:
+  type: archive
+  strip_components: 0
+
+# `off` — FORCED by the layout above, not chosen. The bundle's only PATH entry
+# is a bare ${installPath}; the scan only inspects an interface-visible
+# `${installPath}/<dir>` entry, so with no subdirectory to point one at both
+# `auto` and `verify` fail spec load at exit 65:
+#
+#   bin_scan is enabled but metadata.json declares no interface-visible
+#   ${installPath}/<dir> PATH entry — the verification would inspect no file and
+#   pass green whatever the archive contains.
+#
+# The `binaries` list in metadata.json is therefore hand-maintained, exactly as
+# that error directs. It is short and stable: `btm` is the only mode-0755 entry
+# in the archive; completion/ holds seven 0644 shell-completion scripts.
+# Quoted so no YAML 1.1 reader folds the bare word into boolean `false`.
+bin_scan: "off"
+
+metadata:
+  default: metadata.json
+
+catalog:
+  logo: logo.svg
+
+versions:
+  # 0.14.5 is the floor. The asset set is byte-identical across 0.14.3–0.14.7
+  # (diffed in full), so no in-range release is missing a declared platform's
+  # asset — an asset-less release inside the range is dropped SILENTLY by the
+  # pipeline.
+  min: "0.14.5"
+  new_per_run: 5
+  poll_interval: "19 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: bottom/tests/smoke.star
+
+annotations:
+  # From the Phase 1.5 license gate:
+  #   $ gh api repos/ClementTsang/bottom/license --jq '.license.spdx_id'
+  #   MIT
+  org.opencontainers.image.licenses: "MIT"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: bottom/bottom
+  fork: ocx-contrib/index
