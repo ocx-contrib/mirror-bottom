@@ -33,17 +33,6 @@ The archive also ships shell completions for bash, zsh, fish, elvish, nushell,
 PowerShell and TypeScript under `completion/` — inside the bundle, but not
 wired onto `PATH`.
 
-## Install with ocx
-
-```sh
-ocx install ocx.sh/bottom/bottom
-```
-
-```sh
-# or pin a specific version
-ocx install ocx.sh/bottom/bottom:0.14.7
-```
-
 ## Links
 
 - [bottom on GitHub](https://github.com/ClementTsang/bottom)
