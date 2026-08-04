@@ -111,11 +111,10 @@ assets:
     - "^bottom_x86_64-unknown-linux-musl\\.tar\\.gz$"
   linux/arm64:
     - "^bottom_aarch64-unknown-linux-musl\\.tar\\.gz$"
-  # PASS 2 — darwin:
-  # darwin/amd64:
-  #   - "^bottom_x86_64-apple-darwin\\.tar\\.gz$"
-  # darwin/arm64:
-  #   - "^bottom_aarch64-apple-darwin\\.tar\\.gz$"
+  darwin/amd64:
+    - "^bottom_x86_64-apple-darwin\\.tar\\.gz$"
+  darwin/arm64:
+    - "^bottom_aarch64-apple-darwin\\.tar\\.gz$"
   # PASS 3 — windows:
   # windows/amd64:
   #   - "^bottom_x86_64-pc-windows-msvc\\.zip$"
